@@ -1,0 +1,40 @@
+name: Publish VidDock release
+on:
+  push:
+    branches: [main]
+    paths: [update.json]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: viddock-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify public update package
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,pathlib,re
+          meta=json.loads(pathlib.Path('update.json').read_text(encoding='utf-8-sig'))
+          v=meta.get('version','')
+          if not re.fullmatch(r'\d+\.\d+\.\d+',v): raise SystemExit('Invalid version')
+          if meta.get('repo')!='watari-naru/viddock': raise SystemExit('Wrong repository')
+          name='VidDock'+v.replace('.','')+'.zip'
+          if meta.get('asset')!='releases/'+name: raise SystemExit('Wrong release asset')
+          asset=pathlib.Path('releases')/name
+          if not asset.is_file(): raise SystemExit('Release package missing')
+          if hashlib.sha256(asset.read_bytes()).hexdigest()!=meta.get('sha256'): raise SystemExit('Release hash mismatch')
+          if not pathlib.Path('VidDockSetup.cmd').is_file():raise SystemExit('Public installer missing')
+          print('Verified',name)
+          PY
+      - name: Publish login-free GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(python3 -c 'import json; print(json.load(open("update.json"))["version"].replace(".",""))')
+          if ! gh release view "v$VERSION" >/dev/null 2>&1; then
+            gh release create "v$VERSION" VidDockSetup.cmd "releases/VidDock$VERSION.zip" --title "VidDock$VERSION" --notes "VidDock non-DRM video saver. No GitHub login required for installation or updates."
+          fi
