@@ -212,7 +212,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Cannot create isolated Python runtime.' }
   }
   if (-not $SkipDependencies) {
-    & $runtimePython -m pip install --disable-pip-version-check --upgrade 'yt-dlp[default]'
+    & $runtimePython -m pip install --disable-pip-version-check --upgrade 'yt-dlp[default,curl-cffi]'
     if ($LASTEXITCODE -ne 0) { throw 'yt-dlp installation failed.' }
   }
   $ffmpeg=Ensure-Tool 'ffmpeg.exe' 'Gyan.FFmpeg'
@@ -280,7 +280,9 @@ try {
     } catch { }
   }
   if (-not $health) { throw 'Helper startup failed. Check supervisor.log and helper.log in the application folder.' }
-  if (-not $SkipDependencies -and (-not $health.ytdlp -or -not $health.ffmpeg)) { throw 'Video tools did not pass the health check.' }
+  if (-not $SkipDependencies -and (-not $health.ytdlp -or -not $health.ffmpeg -or -not $health.impersonation)) {
+    throw 'Video tools or curl_cffi impersonation dependency did not pass the health check.'
+  }
   $changed=$false
   Write-Host ('SETUP OK / helper v'+$health.version+' / automatic connection ready') -ForegroundColor Green
   Write-Host 'Open chrome://extensions, disable the OLD Watari extension, and Load unpacked from:' -ForegroundColor Cyan
