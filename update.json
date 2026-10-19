@@ -1,7 +1,7 @@
 {
   "repo": "watari-naru/viddock",
-  "version": "1.8.3",
-  "asset": "releases/VidDock183.zip",
-  "sha256": "11ec0206583243f5a54d8b5879053052b7945d3c69b09bcd26c53b8c0318ceec",
+  "version": "1.9.0",
+  "asset": "releases/VidDock190.zip",
+  "sha256": "fca93ea851df68616988b66c872081907633ccf09344b6d568b6a6e50373f4ba",
   "notes": "VidDock public updates"
 }
