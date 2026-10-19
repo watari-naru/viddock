@@ -1,22 +1,22 @@
 # VidDock
 
-VidDock saves supported non-DRM video streams as MP4 using a Chrome side panel and a local Windows helper.
+A Chrome side-panel downloader for supported non-DRM video. It uses a local Windows helper and FFmpeg to save playable MP4 files.
 
-## Download
+## Install and repair
 
-[VidDockSetup.cmd](./releases/latest) - public installation and repair; GitHub sign-in is not required.
+**Download VidDockSetup.cmd from the [latest release](../../releases/latest).** No GitHub login required. Open `chrome://extensions` and reload VidDock after setup.
 
-Open chrome://extensions and load the folder shown by the installer once. On a new PC that is usually `%LOCALAPPDATA%\VidDock\Extension`, while existing installations may use `%LOCALAPPDATA%\WatariVideoHelper\Extension`.
+For fresh installs the extension is typically at `%LOCALAPPDATA%\VidDock\Extension`. Existing installations can retain `%LOCALAPPDATA%\WatariVideoHelper\Extension`.
 
-## VidDock190
+**VidDock191 repair note:** If VidDock190 shows `New helper could not start (exit=0)` followed by `Previous version restored`, run **VidDockSetup.cmd once** instead of repeatedly pressing Update. This restarts the existing Windows supervisor, which otherwise remains loaded with the old restart-checking code. Saved videos, connection token, and settings stay in the application directory.
 
-- Carries **Referer**, **Origin**, **User-Agent**, and **Accept-Language** from detected playback requests to the non-DRM downloader when available.
-- Keeps sensitive **Cookie** and **Authorization** request headers out of the extension's captured request context and download records.
-- Preserves stable video query IDs while removing expiring signature parameters from duplicate identifiers.
-- Redacts signed media URLs and credentials from stored error messages.
-- Synchronizes Chrome and helper save folders in a consistent order.
-- Includes source-upgrade tests, rollback tests, and an actual Windows PowerShell installer smoke test.
+## VidDock191
 
-This release improves detection and delivery of legitimate playback request context but **cannot guarantee downloads from any particular site**. Site-specific authorization, account access, DRM, and server-side download restrictions are not bypassed.
+- Fixes false update rollbacks caused by the initial helper's health check racing with an update request.
+- The newly started helper ignores restart markers requesting its current or an older version.
+- The supervisor validates its exact child PID and retries at most twice after an unexpected clean exit; persistent failures still roll back safely.
+- Tested with real local helper processes on Windows and Linux, including VidDock190 to VidDock191 upgrades, stale restart markers, deliberate startup errors and rollback.
 
-Sources remain in the owner's private development repository; the public repository contains only installation packages and update metadata.
+A successful local automated test does not guarantee any particular website allows video saving. Some 403 responses are enforced by the video provider. The application does not decrypt DRM or bypass authorization requirements.
+
+The GitHub source repository remains private; public release files and update metadata contain no account tokens.
