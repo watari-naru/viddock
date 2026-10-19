@@ -2,22 +2,24 @@
 
 VidDock is a Chrome side-panel downloader for supported non-DRM videos. It saves playable MP4 files with a Windows local helper, FFmpeg and yt-dlp.
 
-## Install
+## Install and repair
 
-No GitHub login is needed. Download **VidDockSetup.cmd** from the [latest release](../../releases/latest) and run it.
+No GitHub login is needed. Download **[VidDockSetup.cmd](./releases/latest)** from the latest release and run it.
 
-Load the extension folder shown by the installer in Chrome via `chrome://extensions`. On new PCs the default is `%LOCALAPPDATA%\VidDock\Extension`, while migrated installations can retain `%LOCALAPPDATA%\WatariVideoHelper\Extension`.
+Chrome requires you to register the installed Extension folder once at `chrome://extensions`. On new PCs it is typically `%LOCALAPPDATA%\VidDock\Extension`. Existing upgraded installations can retain `%LOCALAPPDATA%\WatariVideoHelper\Extension`.
 
-After installation, use the VidDock side panel's **Update** controls to update. The original installer can be deleted. Do not delete the installed application directory.
+**If VidDock182 update failed with "New helper could not start":** Run the newly published VidDockSetup.cmd once rather than repeatedly clicking Update. The old supervisor is still running and must be repaired. Existing downloads, preferences, and the pairing token are preserved.
 
-## VidDock182
+## VidDock183
 
-- Adds the official yt-dlp optional extra `curl_cffi`, installed with `yt-dlp[default,curl-cffi]`.
-- When yt-dlp reports a Cloudflare anti-bot challenge during a generic video extraction, VidDock retries **once** using yt-dlp's `--extractor-args generic:impersonate`.
-- Existing installations can install the missing optional dependency in the background on first startup after updating.
-- The helper status indicates whether browser impersonation is available or still being installed.
-- Regular HTTP 403 errors are **not** automatically retried. Site-controlled access restrictions can still block downloads.
+- Captures Python helper startup errors in `helper_startup_failure.log` and provides diagnostics in `supervisor.log`.
+- Delays optional curl_cffi installation until the helper is serving health responses.
+- Installs just missing curl_cffi rather than upgrading yt-dlp during restart.
+- Discards stale Python bytecode before restarting the helper.
+- Adds automated published-182-to-183 migration and rollback tests on Windows and Linux.
 
-No DRM decryption, access-control credential extraction or guaranteed Cloudflare bypass is provided. Respect each website's terms and copyright.
+**Note:** Automated tests do not guarantee that the update will succeed on every local PC. If setup still fails, read `supervisor.log` and `helper_startup_failure.log` from the application directory.
 
-GitHub source repository remains private, while only distribution files and update metadata are public.
+No DRM circumvention, credential extraction, or guarantee of accessing Cloudflare-restricted streams is offered. Respect site terms and content rights.
+
+The development repository stays private; only releases and update metadata are public.
