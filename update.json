@@ -1,7 +1,7 @@
 {
   "repo": "watari-naru/viddock",
-  "version": "1.9.0",
-  "asset": "releases/VidDock190.zip",
-  "sha256": "fca93ea851df68616988b66c872081907633ccf09344b6d568b6a6e50373f4ba",
+  "version": "1.9.1",
+  "asset": "releases/VidDock191.zip",
+  "sha256": "363124ce3463989885d9cf3ba11afb0ac05a178171bae790d012a30e22e4fc20",
   "notes": "VidDock public updates"
 }
