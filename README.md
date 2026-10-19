@@ -1,25 +1,22 @@
 # VidDock
 
-VidDock is a Chrome side-panel downloader for supported non-DRM videos. It saves playable MP4 files with a Windows local helper, FFmpeg and yt-dlp.
+VidDock saves supported non-DRM video streams as MP4 using a Chrome side panel and a local Windows helper.
 
-## Install and repair
+## Download
 
-No GitHub login is needed. Download **[VidDockSetup.cmd](./releases/latest)** from the latest release and run it.
+[VidDockSetup.cmd](./releases/latest) - public installation and repair; GitHub sign-in is not required.
 
-Chrome requires you to register the installed Extension folder once at `chrome://extensions`. On new PCs it is typically `%LOCALAPPDATA%\VidDock\Extension`. Existing upgraded installations can retain `%LOCALAPPDATA%\WatariVideoHelper\Extension`.
+Open chrome://extensions and load the folder shown by the installer once. On a new PC that is usually `%LOCALAPPDATA%\VidDock\Extension`, while existing installations may use `%LOCALAPPDATA%\WatariVideoHelper\Extension`.
 
-**If VidDock182 update failed with "New helper could not start":** Run the newly published VidDockSetup.cmd once rather than repeatedly clicking Update. The old supervisor is still running and must be repaired. Existing downloads, preferences, and the pairing token are preserved.
+## VidDock190
 
-## VidDock183
+- Carries **Referer**, **Origin**, **User-Agent**, and **Accept-Language** from detected playback requests to the non-DRM downloader when available.
+- Keeps sensitive **Cookie** and **Authorization** request headers out of the extension's captured request context and download records.
+- Preserves stable video query IDs while removing expiring signature parameters from duplicate identifiers.
+- Redacts signed media URLs and credentials from stored error messages.
+- Synchronizes Chrome and helper save folders in a consistent order.
+- Includes source-upgrade tests, rollback tests, and an actual Windows PowerShell installer smoke test.
 
-- Captures Python helper startup errors in `helper_startup_failure.log` and provides diagnostics in `supervisor.log`.
-- Delays optional curl_cffi installation until the helper is serving health responses.
-- Installs just missing curl_cffi rather than upgrading yt-dlp during restart.
-- Discards stale Python bytecode before restarting the helper.
-- Adds automated published-182-to-183 migration and rollback tests on Windows and Linux.
+This release improves detection and delivery of legitimate playback request context but **cannot guarantee downloads from any particular site**. Site-specific authorization, account access, DRM, and server-side download restrictions are not bypassed.
 
-**Note:** Automated tests do not guarantee that the update will succeed on every local PC. If setup still fails, read `supervisor.log` and `helper_startup_failure.log` from the application directory.
-
-No DRM circumvention, credential extraction, or guarantee of accessing Cloudflare-restricted streams is offered. Respect site terms and content rights.
-
-The development repository stays private; only releases and update metadata are public.
+Sources remain in the owner's private development repository; the public repository contains only installation packages and update metadata.
