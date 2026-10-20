@@ -1,7 +1,7 @@
 {
   "repo": "watari-naru/viddock",
-  "version": "1.9.7",
-  "asset": "releases/VidDock197.zip",
-  "sha256": "5a4374fa498646aca59c7fccaa3cf54b7bdb0eeea398e730c2e8aea0bb39d5fa",
-  "notes": "Current-window reload and batch queue; configurable 1-12 simultaneous saves (default 3)"
+  "version": "1.9.8",
+  "asset": "releases/VidDock198.zip",
+  "sha256": "6d1c5ac2014c0c91c1687b607f3a2a8dc3808ee1ec514c88cdffc75a1f308ff9",
+  "notes": "Rescan existing window tabs without reload; preserve playback context, retry late players, optional visibility assist"
 }
