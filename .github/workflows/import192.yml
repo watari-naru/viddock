@@ -1,0 +1,38 @@
+name: Publish verified VidDock192
+on:
+  push:
+    branches: [main]
+    paths: ['tools/publish192.py', '.github/workflows/import192.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: viddock192-import
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reconstruct and verify exact tested archive
+        run: python tools/publish192.py
+      - name: Commit release and update pointer
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add releases/VidDock192.zip update.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'release: publish verified VidDock192'
+            git push
+          fi
+      - name: Publish public release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view v192 >/dev/null 2>&1; then
+            gh release create v192 VidDockSetup.cmd releases/VidDock192.zip --target "$(git rev-parse HEAD)" --title VidDock192 --notes 'Fixes Windows helper process identification and preserves interrupted job status. Windows and Linux regression tests passed. Run VidDockSetup.cmd once to restart the old supervisor. Actual video-site access restrictions can still block downloads.'
+          fi

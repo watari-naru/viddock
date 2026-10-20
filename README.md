@@ -1,22 +1,17 @@
 # VidDock
 
-A Chrome side-panel downloader for supported non-DRM video. It uses a local Windows helper and FFmpeg to save playable MP4 files.
+A Chrome side-panel downloader for supported non-DRM media, with a local Windows helper.
 
-## Install and repair
+## Install or repair
 
-**Download VidDockSetup.cmd from the [latest release](../../releases/latest).** No GitHub login required. Open `chrome://extensions` and reload VidDock after setup.
+Download **VidDockSetup.cmd** from the [latest release](https://github.com/watari-naru/viddock/releases/latest). No GitHub login is required. Run setup once, wait for SETUP OK, then reload VidDock at chrome://extensions.
 
-For fresh installs the extension is typically at `%LOCALAPPDATA%\VidDock\Extension`. Existing installations can retain `%LOCALAPPDATA%\WatariVideoHelper\Extension`.
+Fresh installs use `%LOCALAPPDATA%\VidDock\Extension`. Existing installations may retain `%LOCALAPPDATA%\WatariVideoHelper\Extension` to preserve settings. Do not delete the installed application directory.
 
-**VidDock191 repair note:** If VidDock190 shows `New helper could not start (exit=0)` followed by `Previous version restored`, run **VidDockSetup.cmd once** instead of repeatedly pressing Update. This restarts the existing Windows supervisor, which otherwise remains loaded with the old restart-checking code. Saved videos, connection token, and settings stay in the application directory.
+## VidDock192
 
-## VidDock191
+Windows virtual-environment Python launchers may use a different process ID from the actual worker. The old supervisor could terminate a healthy helper because those IDs differed. VidDock192 verifies a per-launch identifier instead. It also journals download status locally so a restarted helper can report interrupted jobs rather than losing the job ID.
 
-- Fixes false update rollbacks caused by the initial helper's health check racing with an update request.
-- The newly started helper ignores restart markers requesting its current or an older version.
-- The supervisor validates its exact child PID and retries at most twice after an unexpected clean exit; persistent failures still roll back safely.
-- Tested with real local helper processes on Windows and Linux, including VidDock190 to VidDock191 upgrades, stale restart markers, deliberate startup errors and rollback.
+The dependency status now shows the actual yt-dlp version used by the helper. Source HTTP403 errors are distinct from local process failures and depend on the provider. This release does not guarantee that every video or HLS stream can be downloaded, does not automatically resume interrupted bytes, and does not bypass DRM or authorization.
 
-A successful local automated test does not guarantee any particular website allows video saving. Some 403 responses are enforced by the video provider. The application does not decrypt DRM or bypass authorization requirements.
-
-The GitHub source repository remains private; public release files and update metadata contain no account tokens.
+Tests include different launcher/worker processes, survival beyond the old startup timeout, a Windows installed-venv 25-second stability check, job journal recovery, upgrades and rollback. Actual website saving on your PC remains unverified. Re-run the installer once for this release so the previously loaded supervisor is replaced.
