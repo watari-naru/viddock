@@ -1,7 +1,7 @@
 {
   "repo": "watari-naru/viddock",
-  "version": "1.9.5",
-  "asset": "releases/VidDock195.zip",
-  "sha256": "b0a8e464cb7e1924e0c5aa4d01a75605dc2add145367d93f8f95c6f1f06b8d18",
-  "notes": "Three active saves with FIFO waiting; four-fragment default, optional 1/2/4/8, speed and ETA"
+  "version": "1.9.6",
+  "asset": "releases/VidDock196.zip",
+  "sha256": "39f0e0ccca422c6b6b1a8cff10ba389f9ac54ec47364cf37f79b8d4f5ceed1f4",
+  "notes": "Persistent speed settings; batched progress and bounded rendering for large waiting queues"
 }
