@@ -1,0 +1,65 @@
+name: Publish verified VidDock197
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/import197.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: viddock-public-197
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Import exact tested distribution, never private source
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,io,json,urllib.request,zipfile
+          expected='5a4374fa498646aca59c7fccaa3cf54b7bdb0eeea398e730c2e8aea0bb39d5fa'
+          target=Path('releases/VidDock197.zip')
+          current=json.loads(Path('update.json').read_text(encoding='utf-8'))
+          if tuple(map(int,current['version'].split('.')))>(1,9,7):
+              raise RuntimeError('A newer public version exists; refusing to downgrade')
+          if not target.exists():
+              url='https://sdmntprcentralus.oaiusercontent.com/files/00000000-1330-81f5-b228-b28480a319b4/raw?se=2026-10-20T13%3A27%3A12Z&sp=r&sv=2026-02-06&sr=b&scid=1556246d-eac3-5cfa-b12d-5307d3e4394e&skoid=4b04981f-b1dc-41e0-a770-8ce0d5c8f411&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-10-19T23%3A15%3A47Z&ske=2026-10-20T23%3A15%3A47Z&sks=b&skv=2026-02-06&sig=B/P2Smp95MepiwA3pc87MrILCbDMtjvFGzbG0VsQyNc%3D'
+              with urllib.request.urlopen(url,timeout=35) as response:artifact=response.read(2_000_000)
+              assert hashlib.sha256(artifact).hexdigest()=='b17859ef2274004284671dcd4406dd1a161b08c56958aa568956011c491238d1','Artifact checksum mismatch'
+              with zipfile.ZipFile(io.BytesIO(artifact)) as archive:
+                  names=[n for n in archive.namelist() if n.endswith('/VidDock197.zip') or n=='VidDock197.zip']
+                  assert len(names)==1,'Unexpected archive layout'
+                  payload=archive.read(names[0])
+              assert hashlib.sha256(payload).hexdigest()==expected,'Distribution differs from verified tests'
+              target.parent.mkdir(exist_ok=True);target.write_bytes(payload)
+          assert hashlib.sha256(target.read_bytes()).hexdigest()==expected
+          with zipfile.ZipFile(target) as archive:
+              manifest=json.loads(archive.read('watari_video_helper/manifest.json'))
+              assert manifest['version']=='1.9.7'
+              assert 'alarms' in manifest['permissions']
+          meta={'repo':'watari-naru/viddock','version':'1.9.7','asset':'releases/VidDock197.zip','sha256':expected,'notes':'Current-window reload and batch queue; configurable 1-12 simultaneous saves (default 3)'}
+          Path('update.json').write_text(json.dumps(meta,indent=2)+'\n',encoding='utf-8')
+          print('Verified VidDock197 distribution:',expected)
+          PY
+      - name: Commit package and update pointer
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add releases/VidDock197.zip update.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'release: verified VidDock197 current-window batch and adjustable concurrency'
+            git push
+          fi
+      - name: Publish anonymous distribution
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view v197 >/dev/null 2>&1; then
+            gh release create v197 releases/VidDock197.zip VidDockSetup.cmd --target "$(git rev-parse HEAD)" --title VidDock197 --notes 'Current-window batch: confirm a snapshot of Web tabs, reload one at a time, detect one best video per tab and add it to the existing save queue. Other windows and newly opened tabs are excluded. Optional brief muted playback assists detection; verification/DRM/undetected pages are reported, not bypassed. A stop button halts further tab processing while accepted saves continue. Concurrency is configurable from 1 to 12 (default 3) and auto-saved. Increasing dispatches waiting jobs; decreasing never cancels active saves. Existing HLS transport and lightweight 100-job UI retained. Automated scoped Chrome API tests, Chromium panel/settings tests, Windows Python 3.12/3.14 and Linux checks passed. Actual per-site batch operation is not guaranteed. Finish pending downloads before updating; reload can discard unsaved page input.'
+          fi
