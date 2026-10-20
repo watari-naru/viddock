@@ -34,6 +34,31 @@ function Write-SetupStage([int]$Number) {
   if ($GuiOutput) { Write-Output ('VIDDOCK_STAGE|'+$Number) }
 }
 function Write-Text([string]$Path,[string]$Value) { [IO.File]::WriteAllText($Path,$Value,$utf8) }
+function Complete-SetupHandoff($health,[string]$ExpectedVersion) {
+  if (-not $health -or -not $health.ok -or $health.version -ne $ExpectedVersion) {
+    throw 'Helper startup failed. Check supervisor.log and helper.log in the application folder.'
+  }
+  if (-not $SkipDependencies -and (-not $health.ytdlp -or -not $health.ffmpeg -or -not $health.impersonation)) {
+    throw 'Video tools or curl_cffi impersonation dependency did not pass the health check.'
+  }
+  # A running Chrome extension may still have the previous manifest/worker.
+  # Publish completion only after the installed helper has passed health checks,
+  # so it can safely finish that handoff without applying the package again.
+  $statusPath=Join-Path $root 'update_status.json'
+  $temporaryStatus=$statusPath+'.'+[guid]::NewGuid().ToString('N')+'.tmp'
+  $previousStatus=$temporaryStatus+'.previous'
+  $status=@{state='done';version=$ExpectedVersion;percent=100;message='Setup complete.';updatedAt=[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()}
+  try {
+    Write-Text $temporaryStatus ($status | ConvertTo-Json -Compress)
+    # PowerShell 5.1 can bind $null to an empty string for this .NET string
+    # argument. A real sibling backup path keeps replacement atomic on Windows.
+    if ([IO.File]::Exists($statusPath)) { [IO.File]::Replace($temporaryStatus,$statusPath,$previousStatus) }
+    else { [IO.File]::Move($temporaryStatus,$statusPath) }
+  } finally {
+    if ([IO.File]::Exists($temporaryStatus)) { [IO.File]::Delete($temporaryStatus) }
+    if ([IO.File]::Exists($previousStatus)) { [IO.File]::Delete($previousStatus) }
+  }
+}
 function Refresh-Path { $env:Path=$env:Path+';'+[Environment]::GetEnvironmentVariable('Path','Machine')+';'+[Environment]::GetEnvironmentVariable('Path','User') }
 function Download-Verified([string]$Url,[string]$ChecksumUrl,[string]$Path) {
   Write-Host ('Downloading '+$Url) -ForegroundColor Cyan
@@ -370,10 +395,7 @@ try {
       if ($candidate.ok -and $candidate.version -eq $manifest.version) { $health=$candidate; break }
     } catch { }
   }
-  if (-not $health) { throw 'Helper startup failed. Check supervisor.log and helper.log in the application folder.' }
-  if (-not $SkipDependencies -and (-not $health.ytdlp -or -not $health.ffmpeg -or -not $health.impersonation)) {
-    throw 'Video tools or curl_cffi impersonation dependency did not pass the health check.'
-  }
+  Complete-SetupHandoff $health $manifest.version
   $changed=$false
   $runtimeChanged=$false; $runtimeCreated=$false; $restartPrevious=$false
   Write-Host ('SETUP OK / helper v'+$health.version+' / automatic connection ready') -ForegroundColor Green
