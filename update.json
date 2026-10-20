@@ -1,7 +1,7 @@
 {
   "repo": "watari-naru/viddock",
-  "version": "1.9.9",
-  "asset": "releases/VidDock199.zip",
-  "sha256": "a37d3f90c0a3c7cb58f3eef06deaf1b66ddd4b80edadab659b771767b1a70c58",
-  "notes": "Bounded 503 and missing-fragment recovery, per-origin cooldown, shorter staging names and expandable error details"
+  "version": "1.9.10",
+  "asset": "releases/VidDock1910.zip",
+  "sha256": "7f9a952bf6c69e0a9bfe277e0b9c1a33ce8ac12e4765aac61dfc1ac50770d132",
+  "notes": "VidDock public updates"
 }
