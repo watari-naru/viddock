@@ -1,7 +1,7 @@
 {
   "repo": "watari-naru/viddock",
-  "version": "1.9.8",
-  "asset": "releases/VidDock198.zip",
-  "sha256": "6d1c5ac2014c0c91c1687b607f3a2a8dc3808ee1ec514c88cdffc75a1f308ff9",
-  "notes": "Rescan existing window tabs without reload; preserve playback context, retry late players, optional visibility assist"
+  "version": "1.9.9",
+  "asset": "releases/VidDock199.zip",
+  "sha256": "a37d3f90c0a3c7cb58f3eef06deaf1b66ddd4b80edadab659b771767b1a70c58",
+  "notes": "Bounded 503 and missing-fragment recovery, per-origin cooldown, shorter staging names and expandable error details"
 }
