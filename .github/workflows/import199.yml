@@ -1,0 +1,73 @@
+name: Publish verified VidDock199
+on:
+  push:
+    branches: [main]
+    paths: ['distribution/VidDock199.*.delta', '.github/workflows/import199.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: viddock-public-199
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify and reconstruct the tested release
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import base64,hashlib,io,json,zipfile,zlib
+          current=json.loads(Path('update.json').read_text())
+          if tuple(map(int,current['version'].split('.')))>(1,9,9):raise RuntimeError('Refusing downgrade')
+          parts=sorted(Path('distribution').glob('VidDock199.*.delta'))
+          assert len(parts)==2,'Missing release delta parts'
+          encoded=''.join(''.join(p.read_text().split()) for p in parts)
+          assert hashlib.sha256(encoded.encode()).hexdigest()=='70e772ab1a3688c6a05a657416c041e3bf5bb9273d9a32873921b37a744d921e','Delta checksum mismatch'
+          patch=json.loads(zlib.decompress(base64.b64decode(encoded,validate=True)))
+          before=Path('releases/VidDock198.zip').read_bytes()
+          assert hashlib.sha256(before).hexdigest()=='6d1c5ac2014c0c91c1687b607f3a2a8dc3808ee1ec514c88cdffc75a1f308ff9'
+          target=Path('releases/VidDock199.zip')
+          expected='a37d3f90c0a3c7cb58f3eef06deaf1b66ddd4b80edadab659b771767b1a70c58'
+          if not target.exists():
+              with zipfile.ZipFile(io.BytesIO(before)) as old,zipfile.ZipFile(target,'w',zipfile.ZIP_DEFLATED,compresslevel=9) as out:
+                  assert set(patch).issubset(old.namelist())
+                  for name in old.namelist():
+                      data=old.read(name)
+                      if name in patch:
+                          lines=data.decode('utf-8').splitlines(keepends=True)
+                          for start,end,text in reversed(patch[name]):
+                              assert 0<=start<=end<=len(lines)
+                              lines[start:end]=[text]
+                          data=''.join(lines).encode('utf-8')
+                      info=zipfile.ZipInfo(name,(2026,10,19,0,0,0));info.compress_type=zipfile.ZIP_DEFLATED;info.external_attr=0o100644<<16
+                      out.writestr(info,data)
+          assert hashlib.sha256(target.read_bytes()).hexdigest()==expected,'Reconstructed archive differs from the tested package'
+          with zipfile.ZipFile(target) as z:
+              assert json.loads(z.read('watari_video_helper/manifest.json'))['version']=='1.9.9'
+              assert b'download_origin_slot' in z.read('watari_video_helper/helper/youtube_helper.py')
+          meta={'repo':'watari-naru/viddock','version':'1.9.9','asset':'releases/VidDock199.zip','sha256':expected,'notes':'Bounded 503 and missing-fragment recovery, per-origin cooldown, shorter staging names and expandable error details'}
+          Path('update.json').write_text(json.dumps(meta,indent=2)+'\n')
+          print('Verified exact tested VidDock199 ZIP',expected)
+          PY
+      - name: Commit distribution and update pointer
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add releases/VidDock199.zip update.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'release: verified VidDock199 recovery and complete error details'
+            git push
+          fi
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view v199 >/dev/null 2>&1; then
+            gh release create v199 releases/VidDock199.zip VidDockSetup.cmd --target "$(git rev-parse HEAD)" --title VidDock199 --notes 'Adds at most two outer recovery retries for transient HTTP 429/500/502/503/504, temporary network failures and missing .part/fragment files. Recovery reuses this running job partial data and lowers only the affected attempt to two then one fragment; saved settings are unchanged. An impaired origin gets a brief cooldown and a temporary two-transfer cap. Missing fragments never count as success. Shorter Windows-safe output names and serialized final publication reduce local path and same-name hazards. Failed cards show expandable redacted error excerpts; bounded local diagnostic logs retain the last failure. Existing rescan behavior, configurable overall concurrency and lightweight UI remain. Tests passed on Windows Python 3.12/3.14 and Linux, including a real synthetic HLS manifest/segment 503 fixture with matching decoded frames, permanent missing-fragment rejection, restart tests and Chromium 100-job UI. User-site failure rates and the exact cause of the screenshot Errno 2 are not verified. Stop batch discovery and finish running/waiting jobs before applying the update. Already failed jobs require manual re-addition; partial recovery is within a live job, not after a final failure or restart.'
+          fi
