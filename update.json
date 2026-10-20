@@ -1,7 +1,7 @@
 {
   "repo": "watari-naru/viddock",
-  "version": "1.9.4",
-  "asset": "releases/VidDock194.zip",
-  "sha256": "509d9aad69b96f916d92c3c241fd77c0fa379b60aa8034a0af341272dbb38b80",
-  "notes": "Multi-download progress, conversion states and per-video history; HLS transport unchanged"
+  "version": "1.9.5",
+  "asset": "releases/VidDock195.zip",
+  "sha256": "b0a8e464cb7e1924e0c5aa4d01a75605dc2add145367d93f8f95c6f1f06b8d18",
+  "notes": "Three active saves with FIFO waiting; four-fragment default, optional 1/2/4/8, speed and ETA"
 }
