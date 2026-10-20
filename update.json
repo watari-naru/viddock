@@ -1,7 +1,7 @@
 {
   "repo": "watari-naru/viddock",
-  "version": "1.9.6",
-  "asset": "releases/VidDock196.zip",
-  "sha256": "39f0e0ccca422c6b6b1a8cff10ba389f9ac54ec47364cf37f79b8d4f5ceed1f4",
-  "notes": "Persistent speed settings; batched progress and bounded rendering for large waiting queues"
+  "version": "1.9.7",
+  "asset": "releases/VidDock197.zip",
+  "sha256": "5a4374fa498646aca59c7fccaa3cf54b7bdb0eeea398e730c2e8aea0bb39d5fa",
+  "notes": "Current-window reload and batch queue; configurable 1-12 simultaneous saves (default 3)"
 }
