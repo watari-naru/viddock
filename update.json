@@ -1,7 +1,7 @@
 {
   "repo": "watari-naru/viddock",
-  "version": "1.9.3",
-  "asset": "releases/VidDock193.zip",
-  "sha256": "acb6b906b3a5424c1c53ca75c1945ee95579ba9994a99fdf70f78b146e0fb451",
-  "notes": "HLS playlist and fragment browser transport repair"
+  "version": "1.9.4",
+  "asset": "releases/VidDock194.zip",
+  "sha256": "509d9aad69b96f916d92c3c241fd77c0fa379b60aa8034a0af341272dbb38b80",
+  "notes": "Multi-download progress, conversion states and per-video history; HLS transport unchanged"
 }
