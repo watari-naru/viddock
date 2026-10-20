@@ -1,0 +1,76 @@
+name: Publish verified VidDock195
+on:
+  push:
+    branches: [main]
+    paths: ['distribution/VidDock195.*', '.github/workflows/import195.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: publish-verified-195
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify every transfer chunk and reconstruct tested archive
+        run: |
+          python - <<'PY'
+          import base64,hashlib,io,json,pathlib,zipfile,zlib
+          root=pathlib.Path('.')
+          meta=json.loads((root/'distribution/VidDock195.delta').read_text(encoding='utf-8'))
+          pieces=[]
+          for name,expected in meta['parts']:
+              text=(root/'distribution'/name).read_text(encoding='ascii').strip()
+              actual=hashlib.sha256(text.encode('ascii')).hexdigest()
+              assert actual==expected,f'Transfer chunk mismatch: {name}, actual={actual}'
+              pieces.append(text)
+          encoded=''.join(pieces)
+          assert hashlib.sha256(encoded.encode('ascii')).hexdigest()=='1b5f6dd2b6d3b337b225b026a31987bb66512b24cdc6fc9d6711d819cf4d29ec'
+          patch=json.loads(zlib.decompress(base64.b64decode(encoded,validate=True)))
+          base=(root/'releases/VidDock194.zip').read_bytes()
+          assert hashlib.sha256(base).hexdigest()=='509d9aad69b96f916d92c3c241fd77c0fa379b60aa8034a0af341272dbb38b80'
+          output=io.BytesIO()
+          with zipfile.ZipFile(io.BytesIO(base)) as old,zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED,compresslevel=9) as new:
+              assert set(patch).issubset(old.namelist())
+              for name in old.namelist():
+                  data=old.read(name)
+                  if name in patch:
+                      lines=data.decode('utf-8').splitlines(keepends=True)
+                      for start,end,text in reversed(patch[name]):
+                          assert 0<=start<=end<=len(lines)
+                          lines[start:end]=[text]
+                      data=''.join(lines).encode('utf-8')
+                  info=zipfile.ZipInfo(name,(2026,10,19,0,0,0))
+                  info.compress_type=zipfile.ZIP_DEFLATED;info.external_attr=0o100644<<16
+                  new.writestr(info,data)
+          data=output.getvalue();sha=hashlib.sha256(data).hexdigest()
+          assert sha=='b0a8e464cb7e1924e0c5aa4d01a75605dc2add145367d93f8f95c6f1f06b8d18','Release differs from the tested private artifact'
+          with zipfile.ZipFile(io.BytesIO(data)) as archive:
+              manifest=json.loads(archive.read('watari_video_helper/manifest.json'))
+              assert manifest['version']=='1.9.5'
+          (root/'releases/VidDock195.zip').write_bytes(data)
+          (root/'update.json').write_text(json.dumps({'repo':'watari-naru/viddock','version':'1.9.5','asset':'releases/VidDock195.zip','sha256':sha,'notes':'Three active saves with FIFO waiting; four-fragment default, optional 1/2/4/8, speed and ETA'},indent=2)+'\n',encoding='utf-8')
+          print('Verified exact VidDock195 ZIP',sha,len(data))
+          PY
+      - name: Commit verified archive and update metadata together
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add releases/VidDock195.zip update.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'release: verified VidDock195 three-slot queue and throughput'
+            git push
+          fi
+      - name: Publish login-free release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view v195 >/dev/null 2>&1; then
+            gh release create v195 releases/VidDock195.zip VidDockSetup.cmd --target "$(git rev-parse HEAD)" --title VidDock195 --notes 'Maximum three active saves including finalization. Further requests wait in FIFO order and start automatically. New direct MP4 requests join the same helper queue. Native HLS/DASH fragment concurrency defaults to four; select 1/2/4/8 in settings. Real byte speed, ETA and size are shown when available. Avoids redundant H264 re-encoding and cross-volume staging, with one MP4 finalizer at a time. Existing Chrome-compatible HLS transport retained. FIFO, concurrent submissions, deduplication, restart, local HLS output equivalence, Chromium UI and Windows Python 3.12/3.14 plus Linux tests passed. Actual site speed improvements are not guaranteed. Update after current downloads finish.'
+          fi
