@@ -1,0 +1,39 @@
+name: Publish verified VidDock193
+on:
+  push:
+    paths:
+      - '.github/workflows/import193.yml'
+      - 'maintenance/import193.py'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: viddock-public193
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reconstruct byte-identical verified archive
+        run: python maintenance/import193.py
+      - name: Commit package and update pointer
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add releases/VidDock193.zip update.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'release: verified VidDock193 HLS transport fix'
+            git push
+          fi
+      - name: Publish public assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view v193 >/dev/null 2>&1; then
+            gh release create v193 releases/VidDock193.zip VidDockSetup.cmd --target "$(git rev-parse HEAD)" --title VidDock193 --notes 'Fixes browser-compatible retry scope for HLS playlists and fragments. Uses native HLS, consistent Chrome transport, one bounded retry and actual target availability checks. Real local HLS regression, Windows Python 3.12 and 3.14, and Linux tests passed. Actual website sessions have not been tested; site-side access restrictions may still block saving. Update from VidDock 1.9.2 via the side-panel update control.'
+          fi
