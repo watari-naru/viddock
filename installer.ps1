@@ -1,6 +1,7 @@
 # Windows PowerShell 5.1+. ASCII source; no global execution-policy changes.
 [CmdletBinding()]
-param([string]$PackagePath='', [string]$InstallRoot='', [switch]$SkipDependencies, [switch]$NoOpen)
+param([string]$PackagePath='', [string]$InstallRoot='', [switch]$SkipDependencies, [switch]$NoOpen,
+      [switch]$UserLocalOnly, [switch]$GuiOutput)
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
@@ -23,7 +24,15 @@ $extension=Join-Path $root 'Extension'
 $temp=Join-Path ([IO.Path]::GetTempPath()) ('WatariSetup-'+[guid]::NewGuid().ToString('N'))
 $backup=Join-Path $root ('setup-backup-'+[guid]::NewGuid().ToString('N'))
 $changed=$false
+$runtimeChanged=$false
+$runtimeCreated=$false
+$restartPrevious=$false
+$supervisorLease=$null
 $utf8=New-Object Text.UTF8Encoding($false)
+if ($GuiOutput) { [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8 }
+function Write-SetupStage([int]$Number) {
+  if ($GuiOutput) { Write-Output ('VIDDOCK_STAGE|'+$Number) }
+}
 function Write-Text([string]$Path,[string]$Value) { [IO.File]::WriteAllText($Path,$Value,$utf8) }
 function Refresh-Path { $env:Path=$env:Path+';'+[Environment]::GetEnvironmentVariable('Path','Machine')+';'+[Environment]::GetEnvironmentVariable('Path','User') }
 function Download-Verified([string]$Url,[string]$ChecksumUrl,[string]$Path) {
@@ -81,7 +90,7 @@ function Install-DenoPortable {
 function Install-PythonUser {
   $target=Join-Path $root 'Tools\Python312'
   $binary=Join-Path $target 'python.exe'
-  if (Test-Path -LiteralPath $binary) {return $binary}
+  if (Get-UsablePython $binary) {return $binary}
   if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { $suffix='-arm64' }
   elseif ($env:PROCESSOR_ARCHITECTURE -eq 'AMD64') {$suffix='-amd64'}
   else {throw 'Python user installation requires Windows x64 or ARM64.'}
@@ -99,6 +108,51 @@ function Install-PythonUser {
   }
   return $binary
 }
+function Get-UsablePython([string]$Executable,[string[]]$PrefixArguments=@()) {
+  if (-not $Executable -or -not (Test-Path -LiteralPath $Executable -PathType Leaf)) {return $null}
+  $preference=$ErrorActionPreference
+  try {
+    # Windows PowerShell 5.1 can turn redirected native stderr into a
+    # terminating error under Stop. A failed discovery probe is expected.
+    $ErrorActionPreference='Continue'
+    $lines=@(& $Executable @PrefixArguments -c 'import sys; assert sys.version_info >= (3,10); print(sys.executable)' 2>$null)
+    $code=$LASTEXITCODE
+    if ($code -ne 0 -or $lines.Count -ne 1) {return $null}
+    $path=([string]$lines[0]).Trim()
+    if ($path -and (Test-Path -LiteralPath $path -PathType Leaf)) {return $path}
+  } catch {return $null}
+  finally {$ErrorActionPreference=$preference}
+  return $null
+}
+function Select-SetupPython {
+  $launcher=Get-Command py.exe -ErrorAction SilentlyContinue
+  if ($launcher) {
+    $usable=Get-UsablePython $launcher.Source @('-3')
+    if ($usable) {return $usable}
+  }
+  $command=Get-Command python.exe -ErrorAction SilentlyContinue
+  if ($command) {
+    $usable=Get-UsablePython $command.Source
+    if ($usable) {return $usable}
+  }
+  $usable=Get-UsablePython (Join-Path $root 'Tools\Python312\python.exe')
+  if ($usable) {return $usable}
+  if ($SkipDependencies) {throw 'Python 3.10 or newer was not found.'}
+  # Do not call Ensure-Tool here: it could select the same unusable launcher
+  # or Windows App Installer alias that discovery has just rejected.
+  $usable=Get-UsablePython (Install-PythonUser)
+  if (-not $usable) {throw 'Python user installation did not provide Python 3.10 or newer.'}
+  return $usable
+}
+function Test-RuntimePackages([string]$Executable) {
+  $preference=$ErrorActionPreference
+  try {
+    $ErrorActionPreference='Continue'
+    & $Executable -c 'import yt_dlp, curl_cffi, yt_dlp_ejs' 2>$null | Out-Null
+    return ($LASTEXITCODE -eq 0)
+  } catch {return $false}
+  finally {$ErrorActionPreference=$preference}
+}
 function Ensure-Tool([string]$Name,[string]$Package) {
   Refresh-Path
   $found=Get-Command $Name -ErrorAction SilentlyContinue
@@ -113,7 +167,7 @@ function Ensure-Tool([string]$Name,[string]$Package) {
   if ($portable.ContainsKey($Name) -and (Test-Path -LiteralPath $portable[$Name])) {return $portable[$Name]}
   if ($SkipDependencies) {return $null}
   $winget=Get-Command winget.exe -ErrorAction SilentlyContinue
-  if ($winget) {
+  if ($winget -and -not $UserLocalOnly) {
     Write-Host ('Trying Windows package installation for '+$Package+'...') -ForegroundColor Cyan
     try {
       & $winget.Source install --id $Package -e --source winget --accept-source-agreements --accept-package-agreements --silent --disable-interactivity | Out-Host
@@ -142,42 +196,59 @@ function Get-PublicBytes([string]$Path) {
     return ,([IO.File]::ReadAllBytes($output))
   } finally { Remove-Item -LiteralPath $output -Force -ErrorAction SilentlyContinue }
 }
-function Stop-Watari {
-  $processes=@(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+function Get-WatariProcesses {
+  return @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
     $_.Name -in @('python.exe','pythonw.exe') -and $_.CommandLine -and $_.CommandLine.IndexOf($root,[StringComparison]::OrdinalIgnoreCase) -ge 0 -and $_.CommandLine -match '(runner|youtube_helper)\.py'
   })
+}
+function Assert-SetupIdle {
+  $keyFile=Join-Path $root '.pairing_key'
+  $health=$null
+  if (Test-Path -LiteralPath $keyFile) {
+    try {
+      $key=(Get-Content -LiteralPath $keyFile -Raw).Trim()
+      $health=Invoke-RestMethod -Uri 'http://127.0.0.1:18763/api/status' -Headers @{'X-Watari-Token'=$key} -TimeoutSec 2
+    } catch {}
+  }
+  if ($health -and $health.ok) {
+    if ($health.activeDownloads -gt 0 -or $health.runningDownloads -gt 0 -or $health.queuedDownloads -gt 0 -or $health.impersonationInstalling) {
+      throw 'Downloads are active. Wait for completion, then rerun setup.'
+    }
+    try {
+      $update=Invoke-RestMethod -Uri 'http://127.0.0.1:18763/api/update/status' -Headers @{'X-Watari-Token'=$key} -TimeoutSec 2
+    } catch {throw 'Cannot verify the running helper is idle. Wait for completion, then rerun setup.'}
+    if ($update.state -in @('running','restarting')) {
+      throw 'Update is active. Wait for completion, then rerun setup.'
+    }
+    return
+  }
+  if (-not $supervisorLease -and @(Get-WatariProcesses).Count -gt 0) {
+    throw 'Cannot verify the running helper is idle. Wait for completion, then rerun setup.'
+  }
+}
+function Stop-Watari {
+  $processes=@(Get-WatariProcesses)
   $processes | Sort-Object @{Expression={if ($_.CommandLine -match 'runner\.py') {0} else {1}}} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
   Start-Sleep -Milliseconds 500
 }
 try {
+  # Detect an existing active installation before installing even a fallback
+  # interpreter. Package/runtime changes must never precede the activity gate.
+  Assert-SetupIdle
   New-Item -ItemType Directory -Path $temp,$root -Force | Out-Null
-  Write-Host '[1/6] Checking tools and GitHub authentication...' -ForegroundColor Cyan
+  Write-SetupStage 1
+  Write-Host '[1/6] Checking the latest public release and tools...' -ForegroundColor Cyan
   if (-not $PackagePath) {
     $meta=$utf8.GetString((Get-PublicBytes 'update.json')) | ConvertFrom-Json
     if ($meta.repo -ne $repo -or $meta.version -notmatch '^\d+\.\d+\.\d+$' -or $meta.sha256 -notmatch '^[a-f0-9]{64}$') { throw 'Invalid public release metadata.' }
     if ($meta.asset -ne ('releases/VidDock'+$meta.version.Replace('.','')+'.zip')) { throw 'Invalid release ZIP name.' }
+    if ($GuiOutput) { Write-Output ('VIDDOCK_VERSION|'+$meta.version) }
     $PackagePath=Join-Path $temp 'release.zip'
     [IO.File]::WriteAllBytes($PackagePath,(Get-PublicBytes $meta.asset))
     if ((Get-FileHash -LiteralPath $PackagePath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $meta.sha256) {throw 'SHA256 mismatch. Nothing was installed.'}
   }
-  $pyCommand=Get-Command py.exe -ErrorAction SilentlyContinue
-  $python=$null
-  if ($pyCommand) { $python=(& $pyCommand.Source -3 -c 'import sys; print(sys.executable)' 2>$null | Select-Object -First 1) }
-  if (-not $python -or -not (Test-Path -LiteralPath $python)) {
-    $candidate=Get-Command python.exe -ErrorAction SilentlyContinue
-    if ($candidate) { $python=(& $candidate.Source -c 'import sys; print(sys.executable)' 2>$null | Select-Object -First 1) }
-  }
-  if (-not $python -or -not (Test-Path -LiteralPath $python)) {
-    $newPython=Ensure-Tool 'py.exe' 'Python.Python.3.12'
-    if ($newPython -and [IO.Path]::GetFileName($newPython).ToLowerInvariant() -eq 'python.exe') {
-      $python=$newPython
-    } elseif ($newPython) {
-      $python=(& $newPython -3 -c 'import sys; print(sys.executable)' | Select-Object -First 1)
-    }
-  }
-  if (-not $python -or -not (Test-Path -LiteralPath $python)) { throw 'Python 3 was not found.' }
-  & $python -c 'import sys; assert sys.version_info >= (3,10)'
-  if ($LASTEXITCODE -ne 0) { throw 'Python 3.10 or newer is required.' }
+  $python=Select-SetupPython
+  Write-SetupStage 2
   Write-Host '[2/6] Validating package...' -ForegroundColor Cyan
   Add-Type -AssemblyName System.IO.Compression.FileSystem
   $zip=[IO.Compression.ZipFile]::OpenRead($PackagePath)
@@ -204,32 +275,48 @@ try {
   & $python -m compileall -q (Join-Path $source 'helper')
   if ($LASTEXITCODE -ne 0) { throw 'Python source validation failed.' }
   Get-ChildItem -LiteralPath $source -Filter __pycache__ -Directory -Recurse | Remove-Item -Recurse -Force
+  Write-SetupStage 3
   Write-Host '[3/6] Preparing isolated video runtime...' -ForegroundColor Cyan
+  Assert-SetupIdle
+  $restartPrevious=(@(Get-WatariProcesses).Count -gt 0)
+  Stop-Watari
+  # Reuse the supervisor's existing lock to prevent Native Messaging from
+  # restarting it while its runtime and application files are being repaired.
+  $supervisorLease=[IO.File]::Open((Join-Path $root 'supervisor.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
   $runtime=Join-Path $root 'Runtime'
   $runtimePython=Join-Path $runtime 'Scripts\python.exe'
   if (-not (Test-Path -LiteralPath $runtimePython)) {
+    $runtimeCreated=-not (Test-Path -LiteralPath $runtime)
+    if (-not $runtimeCreated) {
+      New-Item -ItemType Directory -Path $backup -Force | Out-Null
+      Copy-Item -LiteralPath $runtime -Destination (Join-Path $backup 'Runtime') -Recurse
+      $runtimeChanged=$true
+    }
     & $python -m venv $runtime
     if ($LASTEXITCODE -ne 0) { throw 'Cannot create isolated Python runtime.' }
   }
   if (-not $SkipDependencies) {
-    & $runtimePython -m pip install --disable-pip-version-check --upgrade 'yt-dlp[default,curl-cffi]'
-    if ($LASTEXITCODE -ne 0) { throw 'yt-dlp installation failed.' }
+    if (-not (Test-RuntimePackages $runtimePython)) {
+      # Healthy repairs reuse dependencies. Back up the previous environment
+      # before a necessary pip repair so failure can restore the old helper.
+      if (-not $runtimeCreated -and -not $runtimeChanged) {
+        New-Item -ItemType Directory -Path $backup -Force | Out-Null
+        Copy-Item -LiteralPath $runtime -Destination (Join-Path $backup 'Runtime') -Recurse
+        $runtimeChanged=$true
+      }
+      & $runtimePython -m pip install --disable-pip-version-check --upgrade 'yt-dlp[default,curl-cffi]'
+      if ($LASTEXITCODE -ne 0) { throw 'yt-dlp installation failed.' }
+    }
   }
   $ffmpeg=Ensure-Tool 'ffmpeg.exe' 'Gyan.FFmpeg'
   $ffprobe=Ensure-Tool 'ffprobe.exe' 'Gyan.FFmpeg'
   $deno=Ensure-Tool 'deno.exe' 'DenoLand.Deno'
+  Write-SetupStage 4
   Write-Host '[4/6] Installing to permanent application folder...' -ForegroundColor Cyan
   $keyFile=Join-Path $root '.pairing_key'
-  if (Test-Path -LiteralPath $keyFile) {
-    $key=(Get-Content -LiteralPath $keyFile -Raw).Trim()
-    try {
-      $old=Invoke-RestMethod -Uri 'http://127.0.0.1:18763/api/status' -Headers @{'X-Watari-Token'=$key} -TimeoutSec 2
-      if ($old.activeDownloads -gt 0) { throw 'Downloads are active. Wait for completion, then rerun setup.' }
-    } catch { if ($_.Exception.Message -like 'Downloads are active*') { throw } }
-  }
+  Assert-SetupIdle
   Stop-Watari
   New-Item -ItemType Directory -Path $backup -Force | Out-Null
-  if (Test-Path -LiteralPath $extension) { Move-Item -LiteralPath $extension -Destination (Join-Path $backup 'Extension') }
   Get-ChildItem -LiteralPath $root -Filter *.py | Copy-Item -Destination $backup
   foreach ($name in @('extension_path.txt','tools.json','native_host.cmd','com.watari.video_helper.json')) {
     $oldFile=Join-Path $root $name
@@ -238,6 +325,7 @@ try {
   $oldRun=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Microsoft\Windows\CurrentVersion\Run')
   if ($oldRun) { try { $oldRunValue=$oldRun.GetValue('WatariVideoHelper'); $oldVidDockRunValue=$oldRun.GetValue('VidDock') } finally { $oldRun.Dispose() } }
   $changed=$true
+  if (Test-Path -LiteralPath $extension) { Move-Item -LiteralPath $extension -Destination (Join-Path $backup 'Extension') }
   Copy-Item -LiteralPath $source -Destination $extension -Recurse
   # Python helper is installed at the application root, never inside Chrome's extension.
   $helperSource=Join-Path $extension 'helper'
@@ -258,6 +346,7 @@ try {
     if (Test-Path -LiteralPath $filePath) { Move-Item -LiteralPath $filePath -Destination $backup -Force }
   }
   Write-Text (Join-Path $root 'update_status.json') '{"state":"idle"}'
+  Write-SetupStage 5
   Write-Host '[5/6] Registering automatic connection and startup...' -ForegroundColor Cyan
   $nativeCmd=Join-Path $root 'native_host.cmd'
   [IO.File]::WriteAllText($nativeCmd,"@echo off`r`n`"%~dp0Runtime\Scripts\python.exe`" `"%~dp0native_host.py`" %*`r`n",[Text.Encoding]::ASCII)
@@ -269,7 +358,9 @@ try {
   $command='"'+$pythonw+'" "'+(Join-Path $root 'runner.py')+'"'
   $run=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Software\Microsoft\Windows\CurrentVersion\Run')
   try { $run.SetValue('VidDock',$command); $run.DeleteValue('WatariVideoHelper',$false) } finally { $run.Dispose() }
+  $supervisorLease.Dispose(); $supervisorLease=$null
   Start-Process -FilePath $pythonw -ArgumentList ('"'+(Join-Path $root 'runner.py')+'"') -WorkingDirectory $root -WindowStyle Hidden
+  Write-SetupStage 6
   Write-Host '[6/6] Verifying running helper...' -ForegroundColor Cyan
   $key=(Get-Content -LiteralPath $keyFile -Raw).Trim(); $health=$null
   for ($i=0; $i -lt 30; $i++) {
@@ -284,14 +375,23 @@ try {
     throw 'Video tools or curl_cffi impersonation dependency did not pass the health check.'
   }
   $changed=$false
+  $runtimeChanged=$false; $runtimeCreated=$false; $restartPrevious=$false
   Write-Host ('SETUP OK / helper v'+$health.version+' / automatic connection ready') -ForegroundColor Green
   Write-Host 'Open chrome://extensions, disable the OLD Watari extension, and Load unpacked from:' -ForegroundColor Cyan
   Write-Host $extension -ForegroundColor Yellow
   Write-Host 'After it works, delete the downloaded installer and ZIP if desired. DO NOT delete the application folder above.'
   Write-Host 'Helper history, pairing key and save folder were kept. Browser-only settings in the old extension are not migrated.'
+  if ($GuiOutput) { Write-Output ('VIDDOCK_RESULT|'+$health.version+'|'+[Convert]::ToBase64String($utf8.GetBytes($extension))) }
   if (-not $NoOpen) { Set-Clipboard -Value $extension -ErrorAction SilentlyContinue; Start-Process explorer.exe -ArgumentList ('"'+$extension+'"') }
 } catch {
   Write-Host ('SETUP FAILED: '+$_.Exception.Message) -ForegroundColor Red
+  if ($GuiOutput) { Write-Output ('VIDDOCK_ERROR|'+[Convert]::ToBase64String($utf8.GetBytes($_.Exception.Message))) }
+  if ($changed -or $runtimeChanged -or $runtimeCreated) {
+    Stop-Watari
+    if (-not $supervisorLease) {
+      $supervisorLease=[IO.File]::Open((Join-Path $root 'supervisor.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+    }
+  }
   if ($changed) {
     Stop-Watari
     if (Test-Path -LiteralPath (Join-Path $backup 'Extension')) {
@@ -311,7 +411,23 @@ try {
     } finally {$reg.Dispose()}
     Write-Host ('Previous files restored. Backup: '+$backup)
   }
+  if ($runtimeChanged) {
+    Stop-Watari
+    Remove-Item -LiteralPath $runtime -Recurse -Force
+    Move-Item -LiteralPath (Join-Path $backup 'Runtime') -Destination $runtime
+  } elseif ($runtimeCreated -and -not $changed -and (Test-Path -LiteralPath $runtime)) {
+    Remove-Item -LiteralPath $runtime -Recurse -Force
+  }
+  if ($supervisorLease) {$supervisorLease.Dispose();$supervisorLease=$null}
+  if ($restartPrevious) {
+    $previousPythonw=Join-Path $root 'Runtime\Scripts\pythonw.exe'
+    $previousRunner=Join-Path $root 'runner.py'
+    if ((Test-Path -LiteralPath $previousPythonw) -and (Test-Path -LiteralPath $previousRunner)) {
+      Start-Process -FilePath $previousPythonw -ArgumentList ('"'+$previousRunner+'"') -WorkingDirectory $root -WindowStyle Hidden
+    }
+  }
   exit 1
 } finally {
+  if ($supervisorLease) {$supervisorLease.Dispose()}
   if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue }
 }

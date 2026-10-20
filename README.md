@@ -1,31 +1,25 @@
 # VidDock
 
-A Chrome side-panel downloader for supported non-DRM media, with a local Windows helper.
+Chromeで動画を検出し、MP4で保存します。
 
-## Install or repair
+## はじめに
 
-Download **VidDockSetup.cmd** from the [latest release](https://github.com/watari-naru/viddock/releases/latest). No GitHub login is required. Run setup once, wait for SETUP OK, then reload VidDock at chrome://extensions.
+1. [VidDockSetup.exe](https://github.com/watari-naru/viddock/releases/latest/download/VidDockSetup.exe) をダウンロードします。
+2. 開いて **インストール** を押します。
+3. 画面の案内に沿ってChromeに追加します。初回だけ必要な操作です。
 
-Fresh installs use `%LOCALAPPDATA%\VidDock\Extension`. Existing installations may retain `%LOCALAPPDATA%\WatariVideoHelper\Extension` to preserve settings. Do not delete the installed application directory.
+## 動画を保存
 
-## VidDock 1.9.10 — sleeping tabs and window batch saving
+動画のページでVidDockを開き、**最高画質で保存** を押します。
 
-Use **「このウィンドウを再スキャンして一括保存」** to check the current window and reserve one detected video per eligible tab at the best available quality.
+複数のタブをまとめて保存する場合は、**このウィンドウを一括保存** を押します。休止中のタブも必要に応じて再読み込みして確認します。結果はタブごとに表示されます。
 
-- Discarded tabs are restored with at most one reload. Frozen tabs are activated first when **「復帰・検出に必要なタブを一時表示して確認」** is enabled.
-- Loaded tabs are scanned without reloading. A reloaded tab's old media URLs and request headers are cleared so the new page can supply fresh information.
-- Page loading is checked for up to 30 seconds, then video discovery continues for up to 45 seconds, including delayed players and embedded frames.
-- The panel shows every tab's result. Finishing the scan means reservations have been checked; the individual downloads continue in the download list.
-- Stopping, closing or navigating a tab, and worker restarts are guarded against duplicate reservations. A request with an uncertain submission result is not sent again automatically.
+## 更新
 
-### Update an existing installation
+**自動更新は初期状態でON**です。Chromeの起動中に6時間ごとに確認し、動画の確認・保存が終わってから更新します。パネルを閉じていても動作します。
 
-After active downloads finish, open **「アプリの更新」 → 「↻ 更新を確認」 → 「アップデート」**. The extension reloads after a successful update. If the installed helper cannot update, run the current **VidDockSetup.cmd** from the latest release to repair it.
+手動で更新する場合は、**アプリの更新 → 今すぐ確認 → 今すぐ更新** を押します。更新用ファイルの実行は不要です。
 
-### Earlier repair in VidDock192
+## 接続できないとき
 
-Windows virtual-environment Python launchers may use a different process ID from the actual worker. The old supervisor could terminate a healthy helper because those IDs differed. VidDock192 verifies a per-launch identifier instead. It also journals download status locally so a restarted helper can report interrupted jobs rather than losing the job ID.
-
-The dependency status now shows the actual yt-dlp version used by the helper. Source HTTP403 errors are distinct from local process failures and depend on the provider. This release does not guarantee that every video or HLS stream can be downloaded, does not automatically resume interrupted bytes, and does not bypass DRM or authorization.
-
-Tests include different launcher/worker processes, survival beyond the old startup timeout, a Windows installed-venv 25-second stability check, job journal recovery, upgrades and rollback. Actual website saving on your PC remains unverified. Re-run the installer once for this release so the previously loaded supervisor is replaced.
+**接続設定 → 接続テスト** を試してください。解決しない場合は、VidDockSetup.exeを開いて修復できます。保存先・履歴・保存済みの動画は引き継がれます。
