@@ -1,7 +1,7 @@
 {
   "repo": "watari-naru/viddock",
-  "version": "1.9.1",
-  "asset": "releases/VidDock191.zip",
-  "sha256": "363124ce3463989885d9cf3ba11afb0ac05a178171bae790d012a30e22e4fc20",
-  "notes": "VidDock public updates"
+  "version": "1.9.2",
+  "asset": "releases/VidDock192.zip",
+  "sha256": "54b022157ee50c8f95ea731eaca286f32045fe331eba406eb34f3a21a80c6fc9",
+  "notes": "Windows helper identity fix and durable download job state"
 }
