@@ -1,0 +1,72 @@
+name: Publish verified VidDock198
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/import198.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: viddock-public-198
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Import exact verified distribution only
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,io,json,urllib.request,zipfile
+          expected='6d1c5ac2014c0c91c1687b607f3a2a8dc3808ee1ec514c88cdffc75a1f308ff9'
+          target=Path('releases/VidDock198.zip')
+          current=json.loads(Path('update.json').read_text(encoding='utf-8'))
+          if tuple(map(int,current['version'].split('.')))>(1,9,8):
+              raise RuntimeError('A newer public version exists; refusing to downgrade')
+          if not target.exists():
+              url='https://sdmntprwestus2.oaiusercontent.com/files/00000000-fa88-81f8-9549-71822bd7ea11/raw?se=2026-10-20T14%3A11%3A43Z&sp=r&sv=2026-02-06&sr=b&scid=638111e1-6257-5d47-b650-3ae017f00e18&skoid=4b04981f-b1dc-41e0-a770-8ce0d5c8f411&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-10-20T13%3A02%3A07Z&ske=2026-10-21T13%3A02%3A07Z&sks=b&skv=2026-02-06&sig=Qi6r7zpz7UwdrkC0AhiomMnheMn9BaVxSfi1HWtbzYc%3D'
+              with urllib.request.urlopen(url,timeout=35) as response:artifact=response.read(2_000_000)
+              assert hashlib.sha256(artifact).hexdigest()=='6f4839e2dafecb66056af7d42f1323954f5a877728bedea36cf7f8ec3c39a775','Artifact checksum mismatch'
+              with zipfile.ZipFile(io.BytesIO(artifact)) as archive:
+                  names=[n for n in archive.namelist() if n.endswith('/VidDock198.zip') or n=='VidDock198.zip']
+                  assert len(names)==1,'Unexpected archive layout'
+                  payload=archive.read(names[0])
+              assert hashlib.sha256(payload).hexdigest()==expected,'Distribution differs from verified tests'
+              target.parent.mkdir(exist_ok=True);target.write_bytes(payload)
+          assert hashlib.sha256(target.read_bytes()).hexdigest()==expected
+          with zipfile.ZipFile(target) as archive,zipfile.ZipFile('releases/VidDock197.zip') as old:
+              manifest=json.loads(archive.read('watari_video_helper/manifest.json'))
+              assert manifest['version']=='1.9.8'
+              code=archive.read('watari_video_helper/background.js').decode('utf-8')
+              batch=code[code.index('// Window batch controller.'):]
+              assert 'chrome.tabs.reload(' not in batch
+              assert 'videosByTab.delete(' not in batch
+              assert 'playbackHeadersByTab.delete(' not in batch
+              for name in ('youtube_helper.py','runner.py','native_host.py'):
+                  path='watari_video_helper/helper/'+name
+                  assert archive.read(path)==old.read(path).replace(b'1.9.7',b'1.9.8'),'Unexpected download/runtime change'
+          meta={'repo':'watari-naru/viddock','version':'1.9.8','asset':'releases/VidDock198.zip','sha256':expected,'notes':'Rescan existing window tabs without reload; preserve playback context, retry late players, optional visibility assist'}
+          Path('update.json').write_text(json.dumps(meta,indent=2)+'\n',encoding='utf-8')
+          print('Verified VidDock198 distribution:',expected)
+          PY
+      - name: Commit release and update pointer
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add releases/VidDock198.zip update.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'release: verified VidDock198 current-window rescan without reload'
+            git push
+          fi
+      - name: Publish anonymous distribution
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view v198 >/dev/null 2>&1; then
+            gh release create v198 releases/VidDock198.zip VidDockSetup.cmd --target "$(git rev-parse HEAD)" --title VidDock198 --notes 'Current-window batch now rescans loaded pages without reloading or clearing captured video URLs and playback request headers. The same detector as manual Rescan retries late-loading players. Optional temporary tab activation helps visibility-dependent pages and restores the prior tab without overriding user selection. The option is shown in the panel and in the start confirmation. Discarded/frozen tabs are reported for manual opening, not automatically reloaded. Existing HLS download transport, lightweight progress UI and 1-12 simultaneous-save setting are retained. Twelve mocked Chrome-API rescan scenarios, existing Chromium panel/settings/100-job regressions, Windows Python 3.12/3.14 installed runtimes and Linux checks passed. Actual site-specific bulk detection remains unverified. Stop batch discovery and finish running/waiting downloads before applying the update.'
+          fi
