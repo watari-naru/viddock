@@ -8,7 +8,21 @@ Download **VidDockSetup.cmd** from the [latest release](https://github.com/watar
 
 Fresh installs use `%LOCALAPPDATA%\VidDock\Extension`. Existing installations may retain `%LOCALAPPDATA%\WatariVideoHelper\Extension` to preserve settings. Do not delete the installed application directory.
 
-## VidDock192
+## VidDock 1.9.10 — sleeping tabs and window batch saving
+
+Use **「このウィンドウを再スキャンして一括保存」** to check the current window and reserve one detected video per eligible tab at the best available quality.
+
+- Discarded tabs are restored with at most one reload. Frozen tabs are activated first when **「復帰・検出に必要なタブを一時表示して確認」** is enabled.
+- Loaded tabs are scanned without reloading. A reloaded tab's old media URLs and request headers are cleared so the new page can supply fresh information.
+- Page loading is checked for up to 30 seconds, then video discovery continues for up to 45 seconds, including delayed players and embedded frames.
+- The panel shows every tab's result. Finishing the scan means reservations have been checked; the individual downloads continue in the download list.
+- Stopping, closing or navigating a tab, and worker restarts are guarded against duplicate reservations. A request with an uncertain submission result is not sent again automatically.
+
+### Update an existing installation
+
+After active downloads finish, open **「アプリの更新」 → 「↻ 更新を確認」 → 「アップデート」**. The extension reloads after a successful update. If the installed helper cannot update, run the current **VidDockSetup.cmd** from the latest release to repair it.
+
+### Earlier repair in VidDock192
 
 Windows virtual-environment Python launchers may use a different process ID from the actual worker. The old supervisor could terminate a healthy helper because those IDs differed. VidDock192 verifies a per-launch identifier instead. It also journals download status locally so a restarted helper can report interrupted jobs rather than losing the job ID.
 

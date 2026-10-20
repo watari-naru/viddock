@@ -3,5 +3,5 @@
   "version": "1.9.10",
   "asset": "releases/VidDock1910.zip",
   "sha256": "7f9a952bf6c69e0a9bfe277e0b9c1a33ce8ac12e4765aac61dfc1ac50770d132",
-  "notes": "VidDock public updates"
+  "notes": "休止タブを復帰し、読み込み後も最大45秒かけて動画・埋め込みプレイヤーを再確認。通常タブは再読み込みせず、全タブの結果と未完了理由を表示します。停止・ページ移動・再起動時の重複予約も防止しました。"
 }
